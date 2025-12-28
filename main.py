@@ -82,7 +82,9 @@ def extract_python_requires(info):
 
 def main(req_file):
     deps = parse_requirements(req_file)
+    deps = parse_requirements(req_file)
     outdated = []
+    warnings = []
 
     for name, spec in deps.items():
         # Only consider pinned "==version" specs as candidates for updates.
@@ -118,6 +120,16 @@ def main(req_file):
         if latest_v > current_v:
             # This package really needs an update
             outdated.append((name, spec, latest_str, license_, py_req))
+        elif current_v > latest_v:
+            warnings.append(f"WARNING: {name} specified version {current_str} is NEWER than PyPI latest {latest_str}!")
+
+    if warnings:
+        print("\n" + "="*80)
+        print("VERSION WARNINGS (Specified > PyPI Latest)")
+        print("="*80)
+        for w in warnings:
+            print(w)
+        print("="*80 + "\n")
 
     if not outdated:
         print("All pinned (==) dependencies are up to date.")
