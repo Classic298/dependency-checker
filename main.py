@@ -24,12 +24,12 @@ def parse_requirements(path):
                 continue
 
             # Match "name and optional specifiers"
-            m = re.match(r"^([A-Za-z0-9_.-]+)\s*([<>=!~].*)?$", line)
+            m = re.match(r"^([A-Za-z0-9_.-]+)(\[[^\]]+\])?\s*([<>=!~].*)?$", line)
             if not m:
                 # Skip lines we don't understand
                 continue
 
-            name, spec = m.groups()
+            name, extras, spec = m.groups()
             deps[name] = (spec or "").strip()
     return deps
 
