@@ -1,7 +1,11 @@
 import re
 import sys
+from datetime import datetime, timezone, timedelta
+
 import requests
 from packaging.version import Version, InvalidVersion
+
+MIN_RELEASE_AGE = timedelta(days=7)
 
 PYPI_URL = "https://pypi.org/pypi/{name}/json"
 
@@ -80,11 +84,31 @@ def extract_python_requires(info):
     return "Unknown"
 
 
+def get_release_date(data, version_str):
+    """
+    Return the earliest upload datetime for a given release version.
+    PyPI stores a list of file uploads per release; the earliest one
+    represents when the version first became available.
+    """
+    files = data.get("releases", {}).get(version_str, [])
+    if not files:
+        return None
+
+    dates = []
+    for f in files:
+        iso = f.get("upload_time_iso_8601")
+        if iso:
+            # PyPI timestamps look like '2024-01-15T12:34:56.789012Z'
+            dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+            dates.append(dt)
+    return min(dates) if dates else None
+
+
 def main(req_file):
-    deps = parse_requirements(req_file)
     deps = parse_requirements(req_file)
     outdated = []
     warnings = []
+    skipped_too_new = []
 
     for name, spec in deps.items():
         # Only consider pinned "==version" specs as candidates for updates.
@@ -118,8 +142,17 @@ def main(req_file):
             continue
 
         if latest_v > current_v:
-            # This package really needs an update
-            outdated.append((name, spec, latest_str, license_, py_req))
+            # Only recommend updates whose release is at least 7 days old
+            release_date = get_release_date(data, latest_str)
+            now = datetime.now(timezone.utc)
+
+            if release_date and (now - release_date) < MIN_RELEASE_AGE:
+                age_days = (now - release_date).days
+                skipped_too_new.append(
+                    f"  {name}: {latest_str} released {age_days} day(s) ago — skipping"
+                )
+            else:
+                outdated.append((name, spec, latest_str, license_, py_req))
         elif current_v > latest_v:
             warnings.append(f"WARNING: {name} specified version {current_str} is NEWER than PyPI latest {latest_str}!")
 
@@ -129,6 +162,14 @@ def main(req_file):
         print("="*80)
         for w in warnings:
             print(w)
+        print("="*80 + "\n")
+
+    if skipped_too_new:
+        print("\n" + "="*80)
+        print(f"SKIPPED — RELEASE YOUNGER THAN {MIN_RELEASE_AGE.days} DAYS")
+        print("="*80)
+        for s in skipped_too_new:
+            print(s)
         print("="*80 + "\n")
 
     if not outdated:
